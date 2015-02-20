@@ -15,21 +15,18 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="..\..\..\%40test\stderr-colorer\stderr-colorer\ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\..\%40test\stderr-colorer\stderr-colorer\stdafx.h">
+    <ClInclude Include="stdafx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\%40test\stderr-colorer\stderr-colorer\targetver.h">
+    <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\%40test\stderr-colorer\stderr-colorer\stdafx.cpp">
+    <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\%40test\stderr-colorer\stderr-colorer\stderr-colorer.cpp">
+    <ClCompile Include="stderr-colorer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
