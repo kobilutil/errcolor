@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <vector>
 
+// TODO: get this from the user
+//static const auto STDERR_COLOR = FOREGROUND_RED;
+static const auto STDERR_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
+static const auto DEFAULT_CHILD_PROCESS_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
+
 void debug_print(char const* format, ...)
 {
 #ifdef _DEBUG
@@ -16,13 +21,6 @@ void debug_print(char const* format, ...)
 	::OutputDebugStringA(line);
 #endif
 }
-
-
-// TODO: get this from the user
-//static const auto STDERR_COLOR = FOREGROUND_RED;
-static const auto STDERR_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
-static const auto DEFAULT_CHILD_PROCESS_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
-
 
 bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 {
@@ -123,15 +121,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	::SetConsoleCtrlHandler(
 		[](DWORD CtrlType)
 		{
-	#ifndef _DEBUG // for release version
+#ifndef _DEBUG // for release version only
 			switch (CtrlType)
 			{
-				// ignore ctrl-c and ctrl-break signals
+			// ignore ctrl-c and ctrl-break signals
 			case CTRL_C_EVENT:
 			case CTRL_BREAK_EVENT:
 				return TRUE;
 			}
-	#endif
+#endif
 			// for all other signals allow the default processing.
 			// whithout this windows xp will display an ugly end-process dialog box
 			// when the user tries to close the console window.
@@ -159,7 +157,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	return 0;
 
 error:
-	CloseHandle(hReadPipe);
-	CloseHandle(hWritePipe);
+	::CloseHandle(hReadPipe);
+	::CloseHandle(hWritePipe);
 	return 1;
 }
