@@ -10,6 +10,20 @@
 static const auto STDERR_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
 static const auto DEFAULT_CHILD_PROCESS_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
 
+//
+// a helper macro that uses c++ compile-time type detection to ease the usage of the
+// GetProcAddress api. For example, compare
+//
+// this:
+//		typedef BOOL(WINAPI *LPFN_Wow64DisableWow64FsRedirection) (PVOID *OldValue);
+//		static auto func = (LPFN_Wow64DisableWow64FsRedirection)::GetProcAddress(::GetModuleHandle(L"kernel32"), "Wow64DisableWow64FsRedirection");
+//
+// to that:
+//		static auto func = GETPROC(Wow64DisableWow64FsRedirection, kernel32);
+//
+#define GETPROC(F,M) (decltype(&F))::GetProcAddress(::GetModuleHandle(L#M), #F)
+
+// a simple printf style wrapper for OutputDebugString
 void debug_print(char const* format, ...)
 {
 #ifdef _DEBUG
@@ -22,8 +36,13 @@ void debug_print(char const* format, ...)
 #endif
 }
 
+// temporary disable the Wow64 file system redirection for 32bit process under 64bit OS
 class ScopedDisableWow64FsRedirection
 {
+	// noncopyable
+	ScopedDisableWow64FsRedirection(ScopedDisableWow64FsRedirection const&) = delete;
+	ScopedDisableWow64FsRedirection& operator=(ScopedDisableWow64FsRedirection const&) = delete;
+
 public:
 	ScopedDisableWow64FsRedirection()
 	{
@@ -43,9 +62,7 @@ private:
 private:
 	static bool IsWow64()
 	{
-		typedef BOOL(WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
-		static auto func = (LPFN_ISWOW64PROCESS)::GetProcAddress(::GetModuleHandle(L"kernel32"), "IsWow64Process");
-	
+		static auto func = GETPROC(IsWow64Process, kernel32);
 		if (!func)
 			return false;
 	
@@ -58,9 +75,7 @@ private:
 
 	static bool DisableWow64FsRedirection(PVOID* ctx)
 	{
-		typedef BOOL(WINAPI *LPFN_Wow64DisableWow64FsRedirection) (PVOID *OldValue);
-		static auto func = (LPFN_Wow64DisableWow64FsRedirection)::GetProcAddress(::GetModuleHandle(L"kernel32"), "Wow64DisableWow64FsRedirection");
-	
+		static auto func = GETPROC(Wow64DisableWow64FsRedirection, kernel32);
 		if (!func)
 			return false;
 	
@@ -69,9 +84,7 @@ private:
 
 	static bool RevertWow64FsRedirection(PVOID ctx)
 	{
-		typedef BOOL(WINAPI *LPFN_Wow64RevertWow64FsRedirection) (PVOID OldValue);
-		static auto func = (LPFN_Wow64RevertWow64FsRedirection)::GetProcAddress(::GetModuleHandle(L"kernel32"), "Wow64RevertWow64FsRedirection");
-
+		static auto func = GETPROC(Wow64RevertWow64FsRedirection, kernel32);
 		if (!func)
 			return false;
 
@@ -92,7 +105,7 @@ bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 
 	// CreateProcess requires a modifiable commandline parameter
 	WCHAR cmdLine2[MAX_PATH];
-	wsprintf(cmdLine2, cmdLine);
+	::wsprintf(cmdLine2, cmdLine);
 
 	ScopedDisableWow64FsRedirection a;
 
