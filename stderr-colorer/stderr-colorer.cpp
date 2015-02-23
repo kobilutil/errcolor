@@ -113,7 +113,7 @@ BOOL WINAPI ConsoleSignalHandler(DWORD CtrlType)
 	return FALSE;
 }
 
-bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
+DWORD RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 {
 	PROCESS_INFORMATION pi{};
 	STARTUPINFO si{};
@@ -143,18 +143,23 @@ bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 		if (!::CreateProcess(NULL, cmdLine2, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
 			debug_print("CreateProcess failed. err%#x, cmdline=%S\n", ::GetLastError(), cmdLine);
-			return false;
+			return 0;
 		}
 	}
 
 	::CloseHandle(pi.hProcess);
 	::CloseHandle(pi.hThread);
 
+	return pi.dwProcessId;
+}
+
+bool AttachToConsole(DWORD pid)
+{
 	for (auto i = 0; i < 5; ++i)
 	{
-		if (::AttachConsole(pi.dwProcessId))
+		if (::AttachConsole(pid))
 		{
-			debug_print("AttachConsole OK. pid=%lu, i=%d\n", pi.dwProcessId, i);
+			debug_print("AttachConsole OK. pid=%lu, i=%d\n", pid, i);
 			::SetConsoleCtrlHandler(&ConsoleSignalHandler, TRUE);
 			return true;
 		}
@@ -243,24 +248,28 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
 	{
 		debug_print("CreatePipe failed. err%#x\n", ::GetLastError());
-		goto error;
+		return 1;
 	}
 
 	if (!::SetHandleInformation(hWritePipe, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
 	{
 		debug_print("SetHandleInformation failed. err%#x\n", ::GetLastError());
-		goto error;
+		return 1;
 	}
 
-	if (RunProcess(DEFAULT_CHILD_PROCESS_CMDLINE, hWritePipe))
-		ReadPipeLoop(hReadPipe);
+	DWORD pid = RunProcess(DEFAULT_CHILD_PROCESS_CMDLINE, hWritePipe);
+	if (!pid)
+		return 1;
 
-	return 0;
+	if (!AttachToConsole(pid))
+		return 1;
 
-error:
+	ReadPipeLoop(hReadPipe);
+
 	::CloseHandle(hReadPipe);
 	::CloseHandle(hWritePipe);
-	return 1;
+
+	return 0;
 }
 
 // Main entry point for a windows application
