@@ -7,10 +7,14 @@
 //#include <Shlwapi.h>
 #include <shellapi.h>
 
-// TODO: get this from the user
-//static const auto STDERR_COLOR = FOREGROUND_RED;
-static const auto STDERR_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
-static const auto DEFAULT_CHILD_PROCESS_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
+static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
+static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
+
+struct Options
+{
+	WORD	color;
+	WCHAR	cmdLine[MAX_PATH];
+};
 
 //
 // a helper macro that uses c++ compile-time type detection to ease the usage of the
@@ -180,7 +184,7 @@ bool AttachToConsole(DWORD pid)
 	return true;
 }
 
-void ReadPipeLoop(HANDLE hReadPipe)
+void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 {
 	// (see HACK in RunProcess for more details)
 	auto hStdOut = ::CreateFile(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
@@ -223,7 +227,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 
 		// change the printing color to something eye catching
 		// TODO: maybe to get this as a setting from the user?
-		::SetConsoleTextAttribute(hStdOut, STDERR_COLOR);
+		::SetConsoleTextAttribute(hStdOut, colorStderr);
 
 		while (bytesEvailable > 1)
 		{
@@ -259,9 +263,20 @@ void StopFeedbackCursor()
 	::GetMessage(&msg, NULL, 0, 0);
 }
 
+bool ParseCmdline(Options& opts, int argc, WCHAR* argv[])
+{
+	opts.color = OPTION_DEFAULT_COLOR;
+	::lstrcpy(opts.cmdLine, OPTION_DEFAULT_CMDLINE);
+	return true;
+}
+
 // Main entry point for a console application
 int _tmain(int argc, _TCHAR* argv[])
 {
+	Options opts;
+	if (!ParseCmdline(opts, argc, argv))
+		return 1;
+
 	HANDLE hReadPipe{}, hWritePipe{};
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
 	{
@@ -275,7 +290,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		return 1;
 	}
 
-	DWORD pid = RunProcess(DEFAULT_CHILD_PROCESS_CMDLINE, hWritePipe);
+	DWORD pid = RunProcess(opts.cmdLine, hWritePipe);
 	if (!pid)
 		return 1;
 
@@ -287,7 +302,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	// explicitly stop the feedback cursor.
 	StopFeedbackCursor();
 
-	ReadPipeLoop(hReadPipe);
+	ReadPipeLoop(hReadPipe, opts.color);
 
 	::CloseHandle(hReadPipe);
 	::CloseHandle(hWritePipe);
