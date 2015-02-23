@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include <stdio.h>
 #include <vector>
+//#include <Shlwapi.h>
+#include <shellapi.h>
 
 // TODO: get this from the user
 //static const auto STDERR_COLOR = FOREGROUND_RED;
@@ -99,31 +101,57 @@ bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 	STARTUPINFO si{};
 	si.cb = sizeof(si);
 	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
-	si.hStdOutput = ::GetStdHandle(STD_OUTPUT_HANDLE);
+	// connect the stderr of the target process to our pipe
 	si.hStdError = hWritePipe;
+
+	// HACK: after changing the project from console to windows subsystem, GetStdHandle returns NULL,
+	// but since it seems that the initial values of std handles for a newly created console process
+	// are always the same - stdin=3, stdout=7 and stderr=11 - we hardcode those here.
+	// TODO: find a better solution.
+	si.hStdInput = (HANDLE)3;
+	si.hStdOutput = (HANDLE)7;
+	//si.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
+	//si.hStdOutput = ::GetStdHandle(STD_OUTPUT_HANDLE);
 
 	// CreateProcess requires a modifiable commandline parameter
 	WCHAR cmdLine2[MAX_PATH];
 	::wsprintf(cmdLine2, cmdLine);
 
-	ScopedDisableWow64FsRedirection a;
-
-	if (!::CreateProcess(NULL, cmdLine2, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
 	{
-		debug_print("CreateProcess failed. err%#x, cmdline=%S\n", GetLastError(), cmdLine);
-		return false;
+		// launching the target process while the Wow64 filesystem redirection is disabled will cause a 64bit Windows 
+		// to always choose the 64bit cmd.exe from C:\Windows\system32 instead of the 32bit one from C:\Windows\SysWOW64
+		ScopedDisableWow64FsRedirection a;
+
+		if (!::CreateProcess(NULL, cmdLine2, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
+		{
+			debug_print("CreateProcess failed. err%#x, cmdline=%S\n", ::GetLastError(), cmdLine);
+			return false;
+		}
 	}
 
 	::CloseHandle(pi.hProcess);
 	::CloseHandle(pi.hThread);
 
-	return true;
+	for (auto i = 0; i < 5; ++i)
+	{
+		if (::AttachConsole(pi.dwProcessId))
+		{
+			debug_print("AttachConsole OK. pid=%lu, i=%d\n", pi.dwProcessId, i);
+			return true;
+		}
+
+		::Sleep(500);
+	}
+
+	debug_print("AttachConsole failed. err%#x\n", ::GetLastError());
+	return false;
 }
 
 void ReadPipeLoop(HANDLE hReadPipe)
 {
-	auto hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	// (see HACK in RunProcess for more details)
+	auto hStdOut = ::CreateFile(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	//auto hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
 	std::vector<BYTE> buffer;
 	buffer.resize(1);
@@ -137,7 +165,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 		// also get a peek to the first byte to save an additional call later on (see logic below)
 		if (!::PeekNamedPipe(hReadPipe, buffer.data(), 1, &num, &bytesEvailable, nullptr))
 		{
-			debug_print("PeekNamedPipe failed. err%#x\n", GetLastError());
+			debug_print("PeekNamedPipe failed. err%#x\n", ::GetLastError());
 			break;
 		}
 
@@ -156,7 +184,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 		CONSOLE_SCREEN_BUFFER_INFO csbi{};
 		if (!::GetConsoleScreenBufferInfo(hStdOut, &csbi))
 		{
-			debug_print("GetConsoleScreenBufferInfo failed. err%#x\n", GetLastError());
+			debug_print("GetConsoleScreenBufferInfo failed. err%#x\n", ::GetLastError());
 			break;
 		}
 
@@ -189,6 +217,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 	}
 }
 
+// Main entry point for a console application
 int _tmain(int argc, _TCHAR* argv[])
 {
 	::SetConsoleCtrlHandler(
@@ -214,13 +243,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	HANDLE hReadPipe{}, hWritePipe{};
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
 	{
-		debug_print("CreatePipe failed. err%#x\n", GetLastError());
+		debug_print("CreatePipe failed. err%#x\n", ::GetLastError());
 		goto error;
 	}
 
 	if (!::SetHandleInformation(hWritePipe, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
 	{
-		debug_print("SetHandleInformation failed. err%#x\n", GetLastError());
+		debug_print("SetHandleInformation failed. err%#x\n", ::GetLastError());
 		goto error;
 	}
 
@@ -233,4 +262,15 @@ error:
 	::CloseHandle(hReadPipe);
 	::CloseHandle(hWritePipe);
 	return 1;
+}
+
+// Main entry point for a windows application
+int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPTSTR    lpCmdLine,
+	_In_ int       nCmdShow)
+{
+	int argc;
+	auto argv = ::CommandLineToArgvW(lpCmdLine, &argc);
+	return _tmain(argc, argv);
 }
