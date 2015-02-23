@@ -94,6 +94,24 @@ private:
 	}
 };
 
+// default console's signal handler for use with SetConsoleCtrlHandler
+BOOL WINAPI ConsoleSignalHandler(DWORD CtrlType)
+{
+	switch (CtrlType)
+	{
+	// ignore ctrl-c and ctrl-break signals
+	case CTRL_C_EVENT:
+#ifndef _DEBUG // for release version only
+	// to aid debugging allow ctr-break to terminate the app
+	case CTRL_BREAK_EVENT:
+#endif
+		return TRUE;
+	}
+	// for all other signals allow the default processing.
+	// whithout this windows xp will display an ugly end-process dialog box
+	// when the user tries to close the console window.
+	return FALSE;
+}
 
 bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 {
@@ -137,6 +155,7 @@ bool RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 		if (::AttachConsole(pi.dwProcessId))
 		{
 			debug_print("AttachConsole OK. pid=%lu, i=%d\n", pi.dwProcessId, i);
+			::SetConsoleCtrlHandler(&ConsoleSignalHandler, TRUE);
 			return true;
 		}
 
@@ -220,26 +239,6 @@ void ReadPipeLoop(HANDLE hReadPipe)
 // Main entry point for a console application
 int _tmain(int argc, _TCHAR* argv[])
 {
-	::SetConsoleCtrlHandler(
-		[](DWORD CtrlType)
-		{
-#ifndef _DEBUG // for release version only
-			switch (CtrlType)
-			{
-			// ignore ctrl-c and ctrl-break signals
-			case CTRL_C_EVENT:
-			case CTRL_BREAK_EVENT:
-				return TRUE;
-			}
-#endif
-			// for all other signals allow the default processing.
-			// whithout this windows xp will display an ugly end-process dialog box
-			// when the user tries to close the console window.
-			return FALSE;
-		},
-		TRUE
-	);
-
 	HANDLE hReadPipe{}, hWritePipe{};
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
 	{
