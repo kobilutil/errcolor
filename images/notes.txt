@@ -1,0 +1,22 @@
+screenshoot taking notes:
+
+- set console params
+
+buffer 60x3000
+window 60x16
+font consolas 14
+color scheme solarized
+
+- paste this
+
+echo hello && echo world 1>&2
+asd
+del stderr-colorer.exe
+
+- open empty notepad and maximize it
+
+- bring to console window to foreground
+
+- alt-printscrn
+
+- open pain.net and fix the round broders
