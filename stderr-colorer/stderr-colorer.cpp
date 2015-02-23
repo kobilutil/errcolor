@@ -142,7 +142,7 @@ DWORD RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 
 		if (!::CreateProcess(NULL, cmdLine2, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
-			debug_print("CreateProcess failed. err%#x, cmdline=%S\n", ::GetLastError(), cmdLine);
+			debug_print("CreateProcess failed. err=%#x, cmdline=%S\n", ::GetLastError(), cmdLine);
 			return 0;
 		}
 	}
@@ -155,20 +155,29 @@ DWORD RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 
 bool AttachToConsole(DWORD pid)
 {
-	for (auto i = 0; i < 5; ++i)
-	{
-		if (::AttachConsole(pid))
-		{
-			debug_print("AttachConsole OK. pid=%lu, i=%d\n", pid, i);
-			::SetConsoleCtrlHandler(&ConsoleSignalHandler, TRUE);
-			return true;
-		}
+	// HACK: on windows xp, the first call to AttachConsole was always failing with error 0x6 (The 
+	// handle is invalid). subsequent calls were failing too with error 0x5 (Access is denied). 
+	// sleeping inside a loop after the failed attempt (even upto 5000ms) didn't help.
+	//
+	// on windows 7 the first call was failing as well but with error 0x1f (A device attached to 
+	// the system is not functioning). yet after a short sleep (even as low as 10ms) the second 
+	// call usually succeeded.
+	//
+	// BUT, when the sleep was called BEFORE calling AttachConsole, on windows xp the call succeeded 
+	// in the first attempt!
+	// on windows 7 the success was in the first try as well.
 
-		::Sleep(500);
+	::Sleep(100);
+
+	if (!::AttachConsole(pid))
+	{
+		debug_print("AttachConsole failed. err=%#x\n", ::GetLastError());
+		return false;
 	}
 
-	debug_print("AttachConsole failed. err%#x\n", ::GetLastError());
-	return false;
+	debug_print("AttachConsole OK. pid=%lu\n", pid);
+	::SetConsoleCtrlHandler(&ConsoleSignalHandler, TRUE);
+	return true;
 }
 
 void ReadPipeLoop(HANDLE hReadPipe)
@@ -189,7 +198,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 		// also get a peek to the first byte to save an additional call later on (see logic below)
 		if (!::PeekNamedPipe(hReadPipe, buffer.data(), 1, &num, &bytesEvailable, nullptr))
 		{
-			debug_print("PeekNamedPipe failed. err%#x\n", ::GetLastError());
+			debug_print("PeekNamedPipe failed. err=%#x\n", ::GetLastError());
 			break;
 		}
 
@@ -208,7 +217,7 @@ void ReadPipeLoop(HANDLE hReadPipe)
 		CONSOLE_SCREEN_BUFFER_INFO csbi{};
 		if (!::GetConsoleScreenBufferInfo(hStdOut, &csbi))
 		{
-			debug_print("GetConsoleScreenBufferInfo failed. err%#x\n", ::GetLastError());
+			debug_print("GetConsoleScreenBufferInfo failed. err=%#x\n", ::GetLastError());
 			break;
 		}
 
@@ -256,13 +265,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	HANDLE hReadPipe{}, hWritePipe{};
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
 	{
-		debug_print("CreatePipe failed. err%#x\n", ::GetLastError());
+		debug_print("CreatePipe failed. err=%#x\n", ::GetLastError());
 		return 1;
 	}
 
 	if (!::SetHandleInformation(hWritePipe, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
 	{
-		debug_print("SetHandleInformation failed. err%#x\n", ::GetLastError());
+		debug_print("SetHandleInformation failed. err=%#x\n", ::GetLastError());
 		return 1;
 	}
 
