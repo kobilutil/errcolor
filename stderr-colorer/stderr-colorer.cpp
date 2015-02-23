@@ -241,6 +241,15 @@ void ReadPipeLoop(HANDLE hReadPipe)
 	}
 }
 
+void StopFeedbackCursor()
+{
+	// http://stackoverflow.com/questions/3857054/turning-off-process-feedback-cursor-in-windows
+	// posting a dummy message and reading it back seems to trick the to sto displaying the feedback cursor.
+	MSG msg;
+	::PostMessage(NULL, WM_NULL, 0, 0);
+	::GetMessage(&msg, NULL, 0, 0);
+}
+
 // Main entry point for a console application
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -263,6 +272,11 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	if (!AttachToConsole(pid))
 		return 1;
+
+	// since there is no message loop here like a regular windows process have, 
+	// the OS will keep displaying its feedback cursor for some time.
+	// explicitly stop the feedback cursor.
+	StopFeedbackCursor();
 
 	ReadPipeLoop(hReadPipe);
 
