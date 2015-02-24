@@ -7,7 +7,7 @@
 #include <shellapi.h>
 
 static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
-static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe /k echo Stderr Colorer Installed 1>&2";
+static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe";
 
 struct Options
 {
