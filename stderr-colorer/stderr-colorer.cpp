@@ -4,7 +4,6 @@
 #include "stdafx.h"
 #include <stdio.h>
 #include <vector>
-//#include <Shlwapi.h>
 #include <shellapi.h>
 
 static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
@@ -267,6 +266,42 @@ bool ParseCmdline(Options& opts, int argc, WCHAR* argv[])
 {
 	opts.color = OPTION_DEFAULT_COLOR;
 	::lstrcpy(opts.cmdLine, OPTION_DEFAULT_CMDLINE);
+
+	for (auto i = 1; i < argc; ++i)
+	{
+		if (::lstrcmp(L"-c", argv[i]) == 0)
+		{
+			if (++i >= argc)
+				return false;
+
+			errno = 0;
+			auto c = ::wcstoul(argv[i], NULL, 0);
+			if (errno)
+				return false;
+
+			if (c < 0 || c >= 256)
+				return false;
+
+			opts.color = (WORD)c;
+		}
+		else 
+		if (::lstrcmp(L"-e", argv[i]) == 0)
+		{
+			if (++i >= argc)
+				return false;
+
+			opts.cmdLine[0] = 0;
+			for (; i < argc; ++i)
+			{
+				::lstrcat(opts.cmdLine, argv[i]);
+				if ((i + 1) < argc)
+					::lstrcat(opts.cmdLine, L" ");
+			}
+		}
+		else
+			return false;
+	}
+
 	return true;
 }
 
@@ -275,7 +310,11 @@ int _tmain(int argc, _TCHAR* argv[])
 {
 	Options opts;
 	if (!ParseCmdline(opts, argc, argv))
+	{
+		debug_print("ParseCmdline failed. argc=%d, cmdline=%S\n", argc, ::GetCommandLine());
+		::MessageBox(NULL, L"Usage: stderr-colorer.exe -c <color> -e <cmdline>", L"Stderr Colorer", MB_OK);
 		return 1;
+	}
 
 	HANDLE hReadPipe{}, hWritePipe{};
 	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
@@ -317,6 +356,6 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	_In_ int       nCmdShow)
 {
 	int argc;
-	auto argv = ::CommandLineToArgvW(lpCmdLine, &argc);
+	auto argv = ::CommandLineToArgvW(::GetCommandLine(), &argc);
 	return _tmain(argc, argv);
 }
