@@ -333,6 +333,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (!pid)
 		return 1;
 
+	// close this copy of the write end of the pipe, so that when the target process has
+	// terminated, the code in ReadPipeLoop will receive a broken-pipe error and will exit.
+	::CloseHandle(hWritePipe);
+
 	if (!AttachToConsole(pid))
 		return 1;
 
@@ -342,9 +346,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	StopFeedbackCursor();
 
 	ReadPipeLoop(hReadPipe, opts.color);
-
 	::CloseHandle(hReadPipe);
-	::CloseHandle(hWritePipe);
 
 	return 0;
 }
