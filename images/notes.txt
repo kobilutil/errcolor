@@ -10,7 +10,7 @@ color scheme kobil
 - paste this
 
 echo hello && echo world 1>&2
-asd
+test out err 18
 del errcolor.exe
 
 - open empty notepad and maximize it
