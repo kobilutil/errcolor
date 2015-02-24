@@ -11,7 +11,7 @@ color scheme solarized
 
 echo hello && echo world 1>&2
 asd
-del stderr-colorer.exe
+del errcolor.exe
 
 - open empty notepad and maximize it
 

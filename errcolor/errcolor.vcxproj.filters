@@ -26,7 +26,7 @@
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="stderr-colorer.cpp">
+    <ClCompile Include="errcolor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
