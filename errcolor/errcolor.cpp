@@ -312,7 +312,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (!ParseCmdline(opts, argc, argv))
 	{
 		debug_print("ParseCmdline failed. argc=%d, cmdline=%S\n", argc, ::GetCommandLine());
-		::MessageBox(NULL, L"Usage: errcolor.exe -c <color> -e <cmdline>", L"Stderr Colorer", MB_OK);
+		::MessageBox(NULL, L"Usage: errcolor.exe [-c <color>] [-e <cmdline>]", L"Stderr Colorer", MB_OK);
 		return 1;
 	}
 
