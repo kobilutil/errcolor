@@ -1,4 +1,4 @@
-# stderr-colorer
+# errcolor
 Print in red all stderr output in Windows console
 
 ## Installation
@@ -13,5 +13,5 @@ So [download][release], save and run.
 
 <sub>This projected is licensed under the terms of the GNU GPL v2.0 license</sub>
 
-[release]: https://github.com/kobilutil/stderr-colorer/releases/latest
-[ss]: https://github.com/kobilutil/stderr-colorer/raw/master/images/screenshot.png "Screenshot"
+[release]: https://github.com/kobilutil/errcolor/releases/latest
+[ss]: https://github.com/kobilutil/errcolor/raw/master/images/screenshot.png "Screenshot"
