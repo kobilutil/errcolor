@@ -11,7 +11,7 @@ So [download][release], save and run.
 
 ![Screenshot][ss]
 
-<sub>This projected is licensed under the terms of the GNU GPL v2.0 license</sub>
+<sub>This project is licensed under the terms of the GNU GPL v2.0 license</sub>
 
 [release]: https://github.com/kobilutil/errcolor/releases/latest
 [ss]: https://github.com/kobilutil/errcolor/raw/master/images/screenshot.png "Screenshot"
