@@ -1,10 +1,9 @@
 #include "stdafx.h"
-#include <stdio.h>
-#include <vector>
 #include <shellapi.h>
 
 static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
 static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe";
+static const auto READ_BUFFER_SIZE = 5 * 1024;
 
 #ifdef _DEBUG
 static const auto WAIT_FOR_CONNECTION_TIMEOUT = INFINITE;
@@ -38,10 +37,21 @@ void debug_print(char const* format, ...)
 	va_list args;
 	va_start(args, format);
 	char line[200];
-	vsprintf(line, format, args);
+	::wvsprintfA(line, format, args);
 	va_end(args);
 	::OutputDebugStringA(line);
 #endif
+}
+
+void file_print(HANDLE hFile, char const* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	char line[200];
+	auto len = ::wvsprintfA(line, format, args);
+	va_end(args);
+	DWORD written;
+	::WriteFile(hFile, line, len, &written, NULL);
 }
 
 // temporary disable the Wow64 file system redirection for 32bit process under 64bit OS
@@ -208,8 +218,9 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 	auto hStdOut = ::CreateFile(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 	//auto hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
 
-	std::vector<BYTE> buffer;
-	buffer.resize(1);
+	// no need for std::vector. 
+	// use a constant size buffer instead and save some executable size.
+	BYTE buffer[READ_BUFFER_SIZE];
 
 	while (true)
 	{
@@ -218,7 +229,7 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 
 		// get the number of bytes available in the pipe.
 		// also get a peek to the first byte to save an additional call later on (see logic below)
-		if (!::PeekNamedPipe(hReadPipe, buffer.data(), 1, &num, &bytesEvailable, nullptr))
+		if (!::PeekNamedPipe(hReadPipe, buffer, 1, &num, &bytesEvailable, nullptr))
 		{
 			debug_print("PeekNamedPipe failed. err=%#x\n", ::GetLastError());
 			break;
@@ -249,26 +260,28 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 
 		while (bytesEvailable > 1)
 		{
-			buffer.resize(bytesEvailable);
+			DWORD bytesToRead = bytesEvailable - 1;
+			if (bytesToRead > sizeof(buffer))
+				bytesToRead = sizeof(buffer);
 
-			::ReadFile(hReadPipe, buffer.data(), bytesEvailable - 1, &num, NULL);
-			::WriteFile(hStdOut, buffer.data(), bytesEvailable - 1, &num, NULL);
+			::ReadFile(hReadPipe, buffer, bytesToRead, &num, NULL);
+			::WriteFile(hStdOut, buffer, bytesToRead, &num, NULL);
 
-			::PeekNamedPipe(hReadPipe, buffer.data(), 1, &num, &bytesEvailable, NULL);
+			::PeekNamedPipe(hReadPipe, buffer, 1, &num, &bytesEvailable, NULL);
 		}
 
 		// at this point there is still 1 byte in the pipe and we got a peek on it
 		// and stored it in the first position in our buffer.
 
 		// write the last bytes
-		::WriteFile(hStdOut, buffer.data(), 1, &num, NULL);
+		::WriteFile(hStdOut, buffer, 1, &num, NULL);
 
 		// restore the console's previous printing color
 		::SetConsoleTextAttribute(hStdOut, csbi.wAttributes);
 
 		// remove the last byte from the pipe thus allowing the process that is waiting 
 		// on the other side of the pipe to continue.
-		::ReadFile(hReadPipe, buffer.data(), 1, &num, NULL);
+		::ReadFile(hReadPipe, buffer, 1, &num, NULL);
 	}
 }
 
@@ -401,10 +414,12 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	debug_print("pipe created %S\n", pipeName);
 
+	auto hStdout = ::GetStdHandle(STD_OUTPUT_HANDLE);
+	auto stdoutType = ::GetFileType(hStdout);
+
 	// if the stdout is redirected, it means the client is requesting us to 
 	// attach to its current console instead of launching a new one.
 	// (see "attach-errcolor-to-current-console.bat" for an example of that).
-	auto stdoutType = ::GetFileType(::GetStdHandle(STD_OUTPUT_HANDLE));
 	if ((stdoutType == FILE_TYPE_PIPE) || (stdoutType == FILE_TYPE_DISK))
 	{
 		debug_print("attaching to current console\n");
@@ -414,9 +429,8 @@ int _tmain(int argc, _TCHAR* argv[])
 			return 1;
 
 		// write the name of our named-pipe server back to the client
-		fprintf(stdout, "%S\n", pipeName);
-		fflush(stdout);
-		fclose(stdout);
+		file_print(hStdout, "%S\n", pipeName);
+		::CloseHandle(hStdout);
 	}
 	else
 	{
