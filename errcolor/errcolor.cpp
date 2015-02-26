@@ -1,6 +1,3 @@
-// ConsoleApplication4.cpp : Defines the entry point for the console application.
-//
-
 #include "stdafx.h"
 #include <stdio.h>
 #include <vector>
@@ -8,6 +5,12 @@
 
 static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
 static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe";
+
+#ifdef _DEBUG
+static const auto WAIT_FOR_CONNECTION_TIMEOUT = INFINITE;
+#else
+static const auto WAIT_FOR_CONNECTION_TIMEOUT = 5000;
+#endif
 
 struct Options
 {
@@ -70,7 +73,7 @@ private:
 		static auto func = GETPROC(IsWow64Process, kernel32);
 		if (!func)
 			return false;
-	
+
 		BOOL bIsWow64;
 		if (!func(::GetCurrentProcess(), &bIsWow64))
 			return false;
@@ -83,7 +86,7 @@ private:
 		static auto func = GETPROC(Wow64DisableWow64FsRedirection, kernel32);
 		if (!func)
 			return false;
-	
+
 		return func(ctx) == TRUE;
 	}
 
@@ -113,11 +116,24 @@ BOOL WINAPI ConsoleSignalHandler(DWORD CtrlType)
 	// for all other signals allow the default processing.
 	// whithout this windows xp will display an ugly end-process dialog box
 	// when the user tries to close the console window.
+	debug_print("ConsoleSignalHandler: %d\n", CtrlType);
 	return FALSE;
 }
 
-DWORD RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
+DWORD RunProcess(LPCWSTR cmdLine, LPCWSTR pipeName)
 {
+	// open up the "other" side (client side) of the pipe. it will be passed directly to the
+	// target process as its stdderr.
+	SECURITY_ATTRIBUTES sa{};
+	sa.nLength = sizeof(sa);
+	sa.bInheritHandle = TRUE;
+	auto hWritePipe = ::CreateFile(pipeName, GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
+	if (!hWritePipe || (hWritePipe == INVALID_HANDLE_VALUE))
+	{
+		debug_print("CreateFile(..pipe..) failed. err=%#x\n", GetLastError());
+		return false;
+	}
+
 	PROCESS_INFORMATION pi{};
 	STARTUPINFO si{};
 	si.cb = sizeof(si);
@@ -153,6 +169,10 @@ DWORD RunProcess(LPCWSTR cmdLine, HANDLE hWritePipe)
 	::CloseHandle(pi.hProcess);
 	::CloseHandle(pi.hThread);
 
+	// close our copy of the write end of the pipe, so that when the target process has
+	// terminated, the code in ReadPipeLoop will receive a broken-pipe error and will exit.
+	::CloseHandle(hWritePipe);
+
 	return pi.dwProcessId;
 }
 
@@ -178,7 +198,6 @@ bool AttachToConsole(DWORD pid)
 		return false;
 	}
 
-	debug_print("AttachConsole OK. pid=%lu\n", pid);
 	::SetConsoleCtrlHandler(&ConsoleSignalHandler, TRUE);
 	return true;
 }
@@ -284,7 +303,7 @@ bool ParseCmdline(Options& opts, int argc, WCHAR* argv[])
 
 			opts.color = (WORD)c;
 		}
-		else 
+		else
 		if (::lstrcmp(L"-e", argv[i]) == 0)
 		{
 			if (++i >= argc)
@@ -305,9 +324,64 @@ bool ParseCmdline(Options& opts, int argc, WCHAR* argv[])
 	return true;
 }
 
+HANDLE CreatePipe(LPWSTR pipeName)
+{
+	// create a unique pipe name
+	::wsprintf(pipeName, L"\\\\.\\pipe\\errcolor-%lu-52DDFBE7-CF76-441F-90CF-B7D825D4DAC2", ::GetCurrentProcessId());
+
+	auto hReadPipe = ::CreateNamedPipe(pipeName,
+		PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
+		PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+		1, // single connection only
+		1, // 1 byte buffer
+		1, // 1 byte buffer
+		NMPWAIT_USE_DEFAULT_WAIT,
+		NULL);
+
+	if (!hReadPipe)
+	{
+		debug_print("CreateNamedPipe failed. err=%#x\n", GetLastError());
+		return NULL;
+	}
+
+	return hReadPipe;
+}
+
+bool WaitForConnection(HANDLE hReadPipe)
+{
+	OVERLAPPED ov{};
+	ov.hEvent = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	if (!ov.hEvent)
+	{
+		debug_print("CreateEvent failed. err=%#x\n", GetLastError());
+		return false;
+	}
+
+	// check if the pipe if connected
+	::ConnectNamedPipe(hReadPipe, &ov);
+	auto rc = ::GetLastError();
+	switch (rc)
+	{
+		// client already connected to the pipe
+		case ERROR_PIPE_CONNECTED:
+			return true;
+		// pipe not connected yet. wait a while for the client to connect.
+		// return true if connection established, false if timeout occured.
+		case ERROR_IO_PENDING:
+			return (::WaitForSingleObject(ov.hEvent, WAIT_FOR_CONNECTION_TIMEOUT) == WAIT_OBJECT_0);
+		default:
+			return false;
+	}
+}
+
 // Main entry point for a console application
 int _tmain(int argc, _TCHAR* argv[])
 {
+	// since there is no message loop here like a regular windows process have, 
+	// the OS will keep displaying its feedback cursor for some time.
+	// explicitly stop the feedback cursor.
+	StopFeedbackCursor();
+
 	Options opts;
 	if (!ParseCmdline(opts, argc, argv))
 	{
@@ -316,38 +390,71 @@ int _tmain(int argc, _TCHAR* argv[])
 		return 1;
 	}
 
-	HANDLE hReadPipe{}, hWritePipe{};
-	if (!::CreatePipe(&hReadPipe, &hWritePipe, NULL, 1))
+	// create a named pipe
+	WCHAR pipeName[MAX_PATH];
+	HANDLE hReadPipe = CreatePipe(pipeName);
+	if (!hReadPipe)
 	{
 		debug_print("CreatePipe failed. err=%#x\n", ::GetLastError());
 		return 1;
 	}
 
-	if (!::SetHandleInformation(hWritePipe, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+	debug_print("pipe created %S\n", pipeName);
+
+	// if the stdout is redirected, it means the client is requesting us to 
+	// attach to its current console instead of launching a new one.
+	// (see "attach-errcolor-to-current-console.bat" for an example of that).
+	auto stdoutType = ::GetFileType(::GetStdHandle(STD_OUTPUT_HANDLE));
+	if ((stdoutType == FILE_TYPE_PIPE) || (stdoutType == FILE_TYPE_DISK))
 	{
-		debug_print("SetHandleInformation failed. err=%#x\n", ::GetLastError());
+		debug_print("attaching to current console\n");
+
+		// attach to the console that we are launching from
+		if (!AttachToConsole(ATTACH_PARENT_PROCESS))
+			return 1;
+
+		// write the name of our named-pipe server back to the client
+		fprintf(stdout, "%S\n", pipeName);
+		fflush(stdout);
+		fclose(stdout);
+	}
+	else
+	{
+		debug_print("launching process - %S\n", opts.cmdLine);
+
+		// launch a new process with its stderr already redirected to our pipe
+		auto pid = RunProcess(opts.cmdLine, pipeName);
+		if (!pid)
+			return 1;
+
+		debug_print("attaching to process's console - pid=%lu\n", pid);
+
+		// and attach to its console
+		if (!AttachToConsole(pid))
+			return 1;
+	}
+
+	debug_print("wait for connection\n");
+
+	// ensure the pipe is connected. 
+	// when launching a new process, the connection is already established since we
+	// open both side of the pipe and pass the "client" side handle to the new process.
+	// but when we are attaching to an existing console, we only open the "server" side 
+	// of the pipe and then write the name of our named-pipe back to the client. afterwards 
+	// we wait for the client to connect. 
+	if (!WaitForConnection(hReadPipe))
+	{
+		debug_print("WaitForConnection failed. err=%#x\n", ::GetLastError());
 		return 1;
 	}
 
-	DWORD pid = RunProcess(opts.cmdLine, hWritePipe);
-	if (!pid)
-		return 1;
+	debug_print("connection established\n");
 
-	// close this copy of the write end of the pipe, so that when the target process has
-	// terminated, the code in ReadPipeLoop will receive a broken-pipe error and will exit.
-	::CloseHandle(hWritePipe);
-
-	if (!AttachToConsole(pid))
-		return 1;
-
-	// since there is no message loop here like a regular windows process have, 
-	// the OS will keep displaying its feedback cursor for some time.
-	// explicitly stop the feedback cursor.
-	StopFeedbackCursor();
-
+	// keep on reading from our side of the pipe until the other side closes
+	// its side of the pipe.
 	ReadPipeLoop(hReadPipe, opts.color);
-	::CloseHandle(hReadPipe);
 
+	::CloseHandle(hReadPipe);
 	return 0;
 }
 
