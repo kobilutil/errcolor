@@ -3,7 +3,7 @@ Print in red all stderr output in Windows console
 
 ## Installation
 
-It is a 90kb single file executable, with no dependencies.
+It is a 80kb single file executable, with no dependencies.
 
 So [download][release], save and run.
 
