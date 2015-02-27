@@ -116,7 +116,7 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 		DWORD bytesEvailable = 0;
 
 		// get the number of bytes available in the pipe.
-		// also get a peek to the first byte to save an additional call later on (see logic below)
+		// also get a peek at the first byte to save an additional call later on (see logic below)
 		if (!::PeekNamedPipe(hReadPipe, buffer, 1, &num, &bytesEvailable, nullptr))
 		{
 			debug_print("PeekNamedPipe failed. err=%#x\n", ::GetLastError());
@@ -148,6 +148,8 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 
 		while (bytesEvailable > 1)
 		{
+			// try to read all except the last one byte so that the process at the other
+			// end of the pipe wil remain blocked while we are writing to the console.
 			DWORD bytesToRead = bytesEvailable - 1;
 			if (bytesToRead > sizeof(buffer))
 				bytesToRead = sizeof(buffer);
@@ -158,10 +160,10 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 			::PeekNamedPipe(hReadPipe, buffer, 1, &num, &bytesEvailable, NULL);
 		}
 
-		// at this point there is still 1 byte in the pipe and we got a peek on it
-		// and stored it in the first position in our buffer.
+		// at this point there is still one byte in the pipe and we got a peek at it
+		// and stored it in the first position in the buffer.
 
-		// write the last bytes
+		// write that last byte
 		::WriteFile(hStdOut, buffer, 1, &num, NULL);
 
 		// restore the console's previous printing color
