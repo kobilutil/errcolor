@@ -286,10 +286,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	WCHAR pipeName[MAX_PATH];
 	HANDLE hReadPipe = CreatePipe(pipeName);
 	if (!hReadPipe)
-	{
-		debug_print("CreatePipe failed. err=%#x\n", ::GetLastError());
 		return 1;
-	}
 
 	debug_print("pipe created %S\n", pipeName);
 
