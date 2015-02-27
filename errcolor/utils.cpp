@@ -102,3 +102,12 @@ void InstallDefaultCtrlHandler()
 {
 	::SetConsoleCtrlHandler(DefaultCtrlHandler, TRUE);
 }
+
+void StopFeedbackCursor()
+{
+	// http://stackoverflow.com/questions/3857054/turning-off-process-feedback-cursor-in-windows
+	// posting a dummy message and reading it back seems to trick the to sto displaying the feedback cursor.
+	MSG msg;
+	::PostMessage(NULL, WM_NULL, 0, 0);
+	::GetMessage(&msg, NULL, 0, 0);
+}

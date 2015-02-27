@@ -7,6 +7,8 @@ void file_print(HANDLE hFile, char const* format, ...);
 
 void InstallDefaultCtrlHandler();
 
+void StopFeedbackCursor();
+
 // temporary disable the Wow64 file system redirection for 32bit process under 64bit OS
 class ScopedDisableWow64FsRedirection
 {
