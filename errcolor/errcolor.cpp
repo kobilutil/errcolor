@@ -110,8 +110,23 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 	// use a constant size buffer instead and save some executable size.
 	BYTE buffer[READ_BUFFER_SIZE];
 
+	OVERLAPPED ovl{};
+
 	while (true)
 	{
+		// starting an overlapped read operation on the pipe with no data buffer and with
+		// a dummy completion routine will allow us to efficiently wait untill there is 
+		// data in the pipe and only then start reading it in a more controled fashion.
+		if (!::ReadFileEx(hReadPipe, NULL, 0, &ovl, [](DWORD, DWORD, LPOVERLAPPED){}))
+		{
+			debug_print("ReadFileEx failed. err=%#x\n", ::GetLastError());
+			break;
+		}
+
+		// putting the thread into an alertable state will break the sleep when the
+		// overlapped operation has finished.
+		::SleepEx(INFINITE, TRUE);
+
 		DWORD num;
 		DWORD bytesEvailable = 0;
 
@@ -123,12 +138,11 @@ void ReadPipeLoop(HANDLE hReadPipe, WORD colorStderr)
 			break;
 		}
 
-		// if no data is available in the pipe then sleep for a short while and try again
-		// TODO: find a better solution
-		// maybe to issue a blocking read for one byte and then use peek to see if there is more?
-		if (!num)
+		// this should not happen since there should be something in pipe,
+		// but check it just in case.
+		if (!num || !bytesEvailable)
 		{
-			Sleep(100);
+			debug_print("PeekNamedPipe returned 0 bytesEvailable\n");
 			continue;
 		}
 
