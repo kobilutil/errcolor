@@ -2,7 +2,7 @@
 #include <shellapi.h>
 
 static const auto OPTION_DEFAULT_COLOR = FOREGROUND_RED | FOREGROUND_INTENSITY;
-static const auto OPTION_DEFAULT_CMDLINE = L"cmd.exe";
+static const auto OPTION_DEFAULT_CMDLINE = L"%COMSPEC%"; 
 static const auto READ_BUFFER_SIZE = 5 * 1024;
 
 #ifdef _DEBUG
@@ -162,7 +162,7 @@ DWORD RunProcess(LPCWSTR cmdLine, LPCWSTR pipeName)
 
 	// CreateProcess requires a modifiable commandline parameter
 	WCHAR cmdLine2[MAX_PATH];
-	::wsprintf(cmdLine2, cmdLine);
+	::ExpandEnvironmentStrings(cmdLine, cmdLine2, ARRAYSIZE(cmdLine2));
 
 	{
 		// launching the target process while the Wow64 filesystem redirection is disabled will cause a 64bit Windows 
