@@ -7,6 +7,9 @@ It is a 80kb single file executable, with no dependencies.
 
 So [download][release], save and run.
 
+## Usage
+errcolor.exe [-c &lt;color&gt;] [-e &lt;cmdline&gt;]
+
 ## Screenshots
 
 ![Screenshot][ss]
